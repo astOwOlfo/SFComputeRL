@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ssh-pod-8gpu-1
+  namespace: sf-redwood-research-1740702252
+spec:
+  nodeSelector:
+    sfcompute.com/tenant: redwood-research-1740702252
+  containers:
+  - name: cuda
+    image: volodimir1024/sf-compute-docker:v2.0 # nvidia/cuda:12.3.1-base-ubuntu22.04
+    command:
+    - /bin/sh
+    - -c
+    - apt-get update && apt-get install -y openssh-server && passwd -d root && echo 'PermitRootLogin yes\nPasswordAuthentication yes\nPermitEmptyPasswords yes' > /etc/ssh/sshd_config && mkdir -p /var/run/sshd && /usr/sbin/sshd -D
+    ports:
+    - containerPort: 22
+    resources:
+      requests:
+        cpu: 32
+        memory: 512Gi
+        nvidia.com/gpu: 8
+      limits:
+        cpu: 32
+        memory: 512Gi
+        nvidia.com/gpu: 8
+    volumeMounts:
+    - name: data-volume
+      mountPath: /data
+    - name: shm-volume
+      mountPath: /dev/shm
+  volumes:
+  - name: data-volume
+    emptyDir: {}
+  - name: shm-volume
+    emptyDir:
+      medium: Memory
+      sizeLimit: 64Gi
