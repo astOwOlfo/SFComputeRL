@@ -16,11 +16,9 @@ Alternatively, buy a 16 gpu cluster using the graphic interface [here](https://s
 
 2. Setup the cluster
 ```bash
-chmod +x multinode_setup.sh
-./multinode_setup.sh
+python setup.py --kubernetes-config-filename <single_ssh_pod.yaml or double_ssh_pod.yaml> --remote-docker-host <ubuntu@lambda_lab_ip> --weights-and-biases-api-key <token>
 ```
-- Note that it will ask you to wait until the output of `kubectl get pods` shows that all pods are running. You should run this command repeatedly and wait until the output shows that the pods are running. It usually takes a few minutes.
-- `./multinode_setup.sh` will print a ray status at the end. Check that it shows 0/16 gpus.
+- `setup.py` will print a ray status at the end. Check that it shows 0/16 gpus.
 
 3. Run RL
 ```bash
