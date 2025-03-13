@@ -153,6 +153,13 @@ def cleanup_ssh_keys(pod: Pod) -> None:
 
 
 @beartype
+def apt_install(pod: Pod, packages: list[str]) -> None:
+    ssh_run_command(
+        pod, f"apt install {' '.join(packages)}", truncate_output_to_length=256
+    )
+
+
+@beartype
 def install_nccl(pod: Pod) -> None:
     ssh_run_command(
         pod,
@@ -163,29 +170,30 @@ def install_nccl(pod: Pod) -> None:
 
 
 @beartype
-def install_swe_bench_rl(pod: Pod, weights_and_biases_api_key: str) -> None:
+def install_simple_rl_experiments(pod: Pod, weights_and_biases_api_key: str) -> None:
     ssh_run_command(
         pod,
-        "git clone https://github.com/astOwOlfo/swe_bench_rl.git --branch sf-compute",
+        # "git clone https://github.com/astOwOlfo/simple_rl_experiments.git --branch sf-compute",
+        "rm -rf simple_rl_experiments; git clone https://github.com/emmyqin/simple_rl_experiments.git",
         truncate_output_to_length=256,
     )
     ssh_run_command(
         pod,
-        f'cd swe_bench_rl; echo "WANDB_API_KEY={weights_and_biases_api_key}" > .env',
+        f'cd simple_rl_experiments/run-tests; echo "WANDB_API_KEY={weights_and_biases_api_key}" > .env',
     )
     ssh_run_command(
         pod,
-        "cd swe_bench_rl; source $HOME/.local/bin/env; uv venv",
+        "cd simple_rl_experiments/run-tests; source $HOME/.local/bin/env; uv venv",
         truncate_output_to_length=256,
     )
     ssh_run_command(
         pod,
-        "cd swe_bench_rl; source $HOME/.local/bin/env; uv pip install setuptools psutil",
+        "cd simple_rl_experiments/run-tests; source $HOME/.local/bin/env; uv pip install setuptools psutil",
         truncate_output_to_length=256,
     )
     ssh_run_command(
         pod,
-        "cd swe_bench_rl; timeout 60 ./installation.sh || ./installation.sh",
+        "cd simple_rl_experiments/run-tests; chmod +x installation.sh; timeout 60 ./installation.sh || ./installation.sh",
         truncate_output_to_length=256,
     )
 
@@ -194,13 +202,15 @@ def install_swe_bench_rl(pod: Pod, weights_and_biases_api_key: str) -> None:
 def install_cupy(pod: Pod) -> None:
     ssh_run_command(
         pod,
-        "cd swe_bench_rl; source $HOME/.local/bin/env; uv pip install cupy-cuda12x --no-build-isolation",
+        "cd simple_rl_experiments/run-tests; source $HOME/.local/bin/env; uv pip install cupy-cuda12x --no-build-isolation",
         truncate_output_to_length=256,
     )
 
 
 @beartype
 def get_pods(config_filename: str) -> list[Pod]:
+    # return [Pod(name="ssh-pod-8gpu-1", host_port=2224), Pod(name="ssh-pod-8gpu-2", host_port=2225)]
+
     with open(config_filename) as f:
         data = yaml.safe_load(f)
 
@@ -215,12 +225,12 @@ def get_pods(config_filename: str) -> list[Pod]:
 def start_ray_head_return_address(pod: Pod) -> str:
     ssh_run_command(
         pod,
-        "cd swe_bench_rl; source $HOME/.local/bin/env; uv run ray stop",
+        "cd simple_rl_experiments/run-tests; source $HOME/.local/bin/env; uv run ray stop",
         truncate_output_to_length=256,
     )
     output = ssh_run_command(
         pod,
-        "cd swe_bench_rl; source $HOME/.local/bin/env; uv run ray stop; uv run ray start --head",
+        "cd simple_rl_experiments/run-tests; source $HOME/.local/bin/env; uv run ray stop; uv run ray start --head",
     )
 
     matches = re.findall(r"ray start --address='([0-9.]+:[0-9]+)'", output)
@@ -233,12 +243,12 @@ def start_ray_head_return_address(pod: Pod) -> str:
 def start_and_connect_ray(pod: Pod, ray_head_address: str) -> None:
     ssh_run_command(
         pod,
-        "cd swe_bench_rl; source $HOME/.local/bin/env; uv run ray stop",
+        "cd simple_rl_experiments/run-tests; source $HOME/.local/bin/env; uv run ray stop",
         truncate_output_to_length=256,
     )
     ssh_run_command(
         pod,
-        f"cd swe_bench_rl; source $HOME/.local/bin/env; uv run ray stop; uv run ray start --address={ray_head_address}",
+        f"cd simple_rl_experiments/run-tests; source $HOME/.local/bin/env; uv run ray stop; uv run ray start --address={ray_head_address}",
     )
 
 
@@ -251,7 +261,7 @@ def write_ray_address_to_bashrc(pod: Pod, address: str) -> None:
 def print_ray_status(pod: Pod, ray_head_address: str) -> None:
     ssh_run_command(
         pod,
-        f"cd swe_bench_rl; source $HOME/.local/bin/env; uv run ray status --address={ray_head_address}",
+        f"cd simple_rl_experiments/run-tests; source $HOME/.local/bin/env; uv run ray status --address={ray_head_address}",
     )
 
 
@@ -271,8 +281,12 @@ def setup_ssh_connection(host_username_at_address: str, guest_pod: Pod) -> None:
             f"echo {public_ssh_key} >> ~/.ssh/authorized_keys",
         ]
     )
+
+    # this seems to always fail
     ssh_run_command(
-        guest_pod, f"yes | ssh {host_username_at_address} echo"
+        guest_pod,
+        # f"yes | ssh {host_username_at_address} echo"
+        f"ssh -o StrictHostKeyChecking=no {host_username_at_address} echo"
     )  # make ssh not ask to type yes
 
 
@@ -323,10 +337,13 @@ def main(
     sleep(5)
 
     for pod in pods:
-        install_swe_bench_rl(pod, weights_and_biases_api_key=weights_and_biases_api_key)
+        install_simple_rl_experiments(
+            pod, weights_and_biases_api_key=weights_and_biases_api_key
+        )
         cleanup_ssh_keys(pod)
         install_nccl(pod)
         install_cupy(pod)
+        apt_install(pod, ["nano", "nvtop", "tmux"])
 
     ray_head_address = start_ray_head_return_address(pods[0])
     for pod in pods[1:]:
