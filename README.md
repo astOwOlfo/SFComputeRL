@@ -24,7 +24,12 @@ $ sf buy -n 16 -s now -d 2hr -p 1 # buy 16 gpus (2 nodes), get them right now (y
 
 3. Setup the cluster
 ```bash
-uv run setup.py --kubernetes-config-filename ssh_pod_<number of nodes you want>_nodes.yaml --github-repo JYudelson1/swe-tests [--github-username <username> --github-password-or-token <password-or-token>] [--remote-docker-host <username@ip_addres>] --weights-and-biases-api-key <token>
+uv run setup.py \
+    --kubernetes-config-filename ssh_pod_<number of nodes you want>_nodes.yaml \
+    --github-repo JYudelson1/swe-tests \
+    [--github-username <username> --github-password-or-token <password-or-token>] \
+    [--remote-docker-host <username@ip_addres>] \
+    --weights-and-biases-api-key <token>
 ```
 - If the github repo you want to clone is private (the one in the example is private), the github username and password should be provided and have the permissions to clone the repo.
 - This will print a ray status at the end. Check that it shows 0/n gpus, where n is the number of gpus you bought.
