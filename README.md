@@ -47,8 +47,8 @@ ssh -p 2222 root@localhost # or whichever command setup.py told you to use to ss
 
 cd swe-tests
 
-nano run_rl.sh # then modify the RL settings to be what you want
-# /!\ !!! if you are using more than one node and run_rl.sh has lines which do `ray stop` and `ray start`, comment them !!! /!\
+nano run_14b.sh # then modify the RL settings to be what you want
+# /!\ !!! if you are using more than one node and run script has lines which do `ray stop` and `ray start`, comment them !!! /!\
 
-.swe-tests # run the RL run
+./run_14b.sh # run the RL run
 ```
