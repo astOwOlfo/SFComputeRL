@@ -1,4 +1,5 @@
-import shlex
+import socket
+from shlex import quote
 import subprocess
 import os
 import yaml
@@ -155,7 +156,7 @@ def cleanup_ssh_keys(pod: Pod) -> None:
 @beartype
 def apt_install(pod: Pod, packages: list[str]) -> None:
     ssh_run_command(
-        pod, f"apt install {' '.join(packages)}", truncate_output_to_length=256
+        pod, f"apt install -y {' '.join(packages)}", truncate_output_to_length=256
     )
 
 
@@ -170,41 +171,87 @@ def install_nccl(pod: Pod) -> None:
 
 
 @beartype
-def install_simple_rl_experiments(pod: Pod, weights_and_biases_api_key: str) -> None:
+def bash_command_that_comments_all_lines_containing(
+    containing_what: str, file: str
+) -> str:
+    return f"sed -i 's/\\(.*{containing_what}.*\\)/#\\1/' {file}"
+
+
+@beartype
+def install_rl_repo(
+    pod: Pod,
+    weights_and_biases_api_key: str,
+    github_repo: str,
+    git_clone_directory: str,
+    github_username: str | None,
+    github_password_or_token: str | None,
+) -> None:
+    assert (github_username is None) == (github_password_or_token is None)
+    if github_username is not None:
+        github_repo_url = f"https://{github_username}:{github_password_or_token}@github.com/{github_repo}"
+    else:
+        github_repo_url = f"https://github.com/{github_repo}"
+
     ssh_run_command(
         pod,
         # "git clone https://github.com/astOwOlfo/simple_rl_experiments.git --branch sf-compute",
-        "rm -rf simple_rl_experiments; git clone https://github.com/emmyqin/simple_rl_experiments.git",
+        # "rm -rf simple_rl_experiments; git clone https://github.com/emmyqin/simple_rl_experiments.git",
+        f"rm -rf {git_clone_directory}; git clone {quote(github_repo_url)}",
         truncate_output_to_length=256,
     )
     ssh_run_command(
         pod,
-        f'cd simple_rl_experiments/run-tests; echo "WANDB_API_KEY={weights_and_biases_api_key}" > .env',
+        f'cd {git_clone_directory}; echo "WANDB_API_KEY={weights_and_biases_api_key}" > .env',
     )
     ssh_run_command(
         pod,
-        "cd simple_rl_experiments/run-tests; source $HOME/.local/bin/env; uv venv",
+        f"cd {git_clone_directory}; source $HOME/.local/bin/env; uv venv",
         truncate_output_to_length=256,
     )
     ssh_run_command(
         pod,
-        "cd simple_rl_experiments/run-tests; source $HOME/.local/bin/env; uv pip install setuptools psutil",
+        f"cd {git_clone_directory}; source $HOME/.local/bin/env; uv pip install setuptools psutil",
         truncate_output_to_length=256,
     )
+
+    # temporary
+    for excluded_package in ["swebench", "inspect_ai", "inspect-ai"]:
+        ssh_run_command(
+            pod,
+            f"cd {git_clone_directory}; {bash_command_that_comments_all_lines_containing(containing_what=excluded_package, file='pyproject.toml')}",
+        )
+
     ssh_run_command(
         pod,
-        "cd simple_rl_experiments/run-tests; chmod +x installation.sh; timeout 60 ./installation.sh || ./installation.sh",
+        f"cd {git_clone_directory}; source $HOME/.local/bin/env; chmod +x installation.sh; timeout 60 ./installation.sh || ./installation.sh",
         truncate_output_to_length=256,
     )
 
 
 @beartype
-def install_cupy(pod: Pod) -> None:
+def install_cupy(pod: Pod, git_clone_directory: str) -> None:
     ssh_run_command(
         pod,
-        "cd simple_rl_experiments/run-tests; source $HOME/.local/bin/env; uv pip install cupy-cuda12x --no-build-isolation",
+        f"cd {git_clone_directory}; source $HOME/.local/bin/env; uv pip install cupy-cuda12x --no-build-isolation",
         truncate_output_to_length=256,
     )
+
+
+@beartype
+def port_is_used(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(("localhost", port)) == 0
+
+
+@beartype
+def get_free_ports(how_many: int) -> list[int]:
+    ports: list[int] = []
+    candidate_port = 2222
+    while len(ports) < how_many:
+        if not port_is_used(candidate_port):
+            ports.append(candidate_port)
+        candidate_port += 1
+    return ports
 
 
 @beartype
@@ -212,25 +259,26 @@ def get_pods(config_filename: str) -> list[Pod]:
     # return [Pod(name="ssh-pod-8gpu-1", host_port=2224), Pod(name="ssh-pod-8gpu-2", host_port=2225)]
 
     with open(config_filename) as f:
-        data = yaml.safe_load(f)
+        data = list(yaml.safe_load_all(f))
 
-    if not isinstance(data, list):
-        data = [data]
+    host_ports = get_free_ports(how_many=len(data))
+
     return [
-        Pod(name=d["metadata"]["name"], host_port=2222 + i) for i, d in enumerate(data)
+        Pod(name=d["metadata"]["name"], host_port=port)
+        for d, port in zip(data, host_ports, strict=True)
     ]
 
 
 @beartype
-def start_ray_head_return_address(pod: Pod) -> str:
+def start_ray_head_return_address(pod: Pod, git_clone_directory: str) -> str:
     ssh_run_command(
         pod,
-        "cd simple_rl_experiments/run-tests; source $HOME/.local/bin/env; uv run ray stop",
+        f"cd {git_clone_directory}; source $HOME/.local/bin/env; uv run ray stop",
         truncate_output_to_length=256,
     )
     output = ssh_run_command(
         pod,
-        "cd simple_rl_experiments/run-tests; source $HOME/.local/bin/env; uv run ray stop; uv run ray start --head",
+        f"cd {git_clone_directory}; source $HOME/.local/bin/env; uv run ray stop; uv run ray start --head",
     )
 
     matches = re.findall(r"ray start --address='([0-9.]+:[0-9]+)'", output)
@@ -240,15 +288,17 @@ def start_ray_head_return_address(pod: Pod) -> str:
 
 
 @beartype
-def start_and_connect_ray(pod: Pod, ray_head_address: str) -> None:
+def start_and_connect_ray(
+    pod: Pod, ray_head_address: str, git_clone_directory: str
+) -> None:
     ssh_run_command(
         pod,
-        "cd simple_rl_experiments/run-tests; source $HOME/.local/bin/env; uv run ray stop",
+        f"cd {git_clone_directory}; source $HOME/.local/bin/env; uv run ray stop",
         truncate_output_to_length=256,
     )
     ssh_run_command(
         pod,
-        f"cd simple_rl_experiments/run-tests; source $HOME/.local/bin/env; uv run ray stop; uv run ray start --address={ray_head_address}",
+        f"cd {git_clone_directory}; source $HOME/.local/bin/env; uv run ray stop; uv run ray start --address={ray_head_address}",
     )
 
 
@@ -258,63 +308,84 @@ def write_ray_address_to_bashrc(pod: Pod, address: str) -> None:
 
 
 @beartype
-def print_ray_status(pod: Pod, ray_head_address: str) -> None:
+def print_ray_status(pod: Pod, ray_head_address: str, git_clone_directory: str) -> None:
     ssh_run_command(
         pod,
-        f"cd simple_rl_experiments/run-tests; source $HOME/.local/bin/env; uv run ray status --address={ray_head_address}",
+        f"cd {git_clone_directory}; source $HOME/.local/bin/env; uv run ray status --address={ray_head_address}",
     )
 
 
 @beartype
-def setup_ssh_connection(host_username_at_address: str, guest_pod: Pod) -> None:
+def setup_ssh_connection(
+    host_username_at_address: str, host_identity_file: str | None, guest_pods: list[Pod]
+) -> None:
     ssh_run_command(
-        guest_pod, "yes y | ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N '' -t ed25519"
+        guest_pods[0],
+        "yes y | ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N '' -t ed25519",
     )
-    public_ssh_key = ssh_run_command(guest_pod, "cat ~/.ssh/id_ed25519.pub")
+
+    private_ssh_key = ssh_run_command(guest_pods[0], "cat ~/.ssh/id_ed25519")
+    public_ssh_key = ssh_run_command(guest_pods[0], "cat ~/.ssh/id_ed25519.pub")
+    private_ssh_key = private_ssh_key.removesuffix("\n")
     public_ssh_key = public_ssh_key.removesuffix("\n")
+
     run_command(
-        [
-            "ssh",
-            "-o",
-            "StrictHostKeyChecking=no",
+        ["ssh", "-o", "StrictHostKeyChecking=no"]
+        + (["-i", host_identity_file] if host_identity_file is not None else [])
+        + [
             host_username_at_address,
             f"echo {public_ssh_key} >> ~/.ssh/authorized_keys",
         ]
     )
 
-    # this seems to always fail
-    ssh_run_command(
-        guest_pod,
-        # f"yes | ssh {host_username_at_address} echo"
-        f"ssh -o StrictHostKeyChecking=no {host_username_at_address} echo"
-    )  # make ssh not ask to type yes
+    for guest_pod in guest_pods[1:]:
+        ssh_run_command(guest_pod, "mkdir -p ~/.ssh/")
+        ssh_run_command(guest_pod, f"echo {public_ssh_key} > ~/.ssh/id_ed25519.pub")
+        ssh_run_command(guest_pod, "rm -f ~/.ssh/id_ed25519")
+        for line in private_ssh_key.splitlines():
+            ssh_run_command(guest_pod, f"echo {line} >> ~/.ssh/id_ed25519")
+        ssh_run_command(guest_pod, "chmod 600 ~/.ssh/id_ed25519")
+        ssh_run_command(guest_pod, "chmod 600 ~/.ssh/id_ed25519.pub")
+
+    for guest_pod in guest_pods:
+        # this seems to always fail
+        ssh_run_command(
+            guest_pod,
+            f"ssh -o StrictHostKeyChecking=no {host_username_at_address} echo",
+        )
 
 
 @beartype
-def setup_remote_docker_server(host_username_at_address: str, guest_pod: Pod) -> None:
-    ssh_run_command(
-        guest_pod, "apt install -y docker.io", truncate_output_to_length=256
-    )
+def setup_remote_docker_server(
+    host_username_at_address: str, host_identity_file: str | None, guest_pods: list[Pod]
+) -> None:
     run_command(
-        [
-            "ssh",
-            "-o",
-            "StrictHostKeyChecking=no",
-            host_username_at_address,
+        ["ssh", "-o", "StrictHostKeyChecking=no", host_username_at_address]
+        + (["-i", host_identity_file] if host_identity_file is not None else [])
+        + [
             "sudo usermod -aG docker $USER",
         ]
     )
-    ssh_run_command(
-        guest_pod,
-        f'docker context create remote-server --docker "host=ssh://{host_username_at_address}"',
-    )
-    ssh_run_command(guest_pod, "docker context use remote-server")
+
+    for guest_pod in guest_pods:
+        ssh_run_command(
+            guest_pod, "apt install -y docker.io", truncate_output_to_length=256
+        )
+        ssh_run_command(
+            guest_pod,
+            f'docker context create remote-server --docker "host=ssh://{host_username_at_address}"',
+        )
+        ssh_run_command(guest_pod, "docker context use remote-server")
 
 
 @beartype
 def main(
     kubernetes_config_filename: str,
+    github_repo: str,
+    github_username: str | None,
+    github_password_or_token: str | None,
     remote_docker_host_username_at_address: str | None,
+    remote_docker_host_identity_file: str | None,
     weights_and_biases_api_key: str,
 ) -> None:
     add_user()
@@ -336,58 +407,101 @@ def main(
         forward_pod_ports_for_ssh(pod)
     sleep(5)
 
+    git_clone_directory: str = quote(github_repo.split("/")[-1])
+
     for pod in pods:
-        install_simple_rl_experiments(
-            pod, weights_and_biases_api_key=weights_and_biases_api_key
+        install_rl_repo(
+            pod,
+            weights_and_biases_api_key=weights_and_biases_api_key,
+            github_repo=github_repo,
+            git_clone_directory=git_clone_directory,
+            github_username=github_username,
+            github_password_or_token=github_password_or_token,
         )
         cleanup_ssh_keys(pod)
         install_nccl(pod)
-        install_cupy(pod)
+        install_cupy(pod, git_clone_directory=git_clone_directory)
         apt_install(pod, ["nano", "nvtop", "tmux"])
 
-    ray_head_address = start_ray_head_return_address(pods[0])
+    ray_head_address = start_ray_head_return_address(
+        pods[0], git_clone_directory=git_clone_directory
+    )
     for pod in pods[1:]:
         write_ray_address_to_bashrc(pod, address=ray_head_address)
-        start_and_connect_ray(pod, ray_head_address=ray_head_address)
+        start_and_connect_ray(
+            pod,
+            ray_head_address=ray_head_address,
+            git_clone_directory=git_clone_directory,
+        )
+
+    if remote_docker_host_username_at_address is not None:
+        setup_ssh_connection(
+            host_username_at_address=remote_docker_host_username_at_address,
+            host_identity_file=remote_docker_host_identity_file,
+            guest_pods=pods,
+        )
+        setup_remote_docker_server(
+            host_username_at_address=remote_docker_host_username_at_address,
+            host_identity_file=remote_docker_host_identity_file,
+            guest_pods=pods,
+        )
 
     for pod in pods:
         print(f"=== RAY STATUS ON POD {pod} ===")
-        print_ray_status(pod, ray_head_address=ray_head_address)
-
-    if remote_docker_host_username_at_address is not None:
-        for pod in pods:
-            setup_ssh_connection(
-                host_username_at_address=remote_docker_host_username_at_address,
-                guest_pod=pod,
-            )
-            setup_remote_docker_server(
-                host_username_at_address=remote_docker_host_username_at_address,
-                guest_pod=pod,
-            )
+        print_ray_status(
+            pod,
+            ray_head_address=ray_head_address,
+            git_clone_directory=git_clone_directory,
+        )
 
     print("=" * 100)
     print("SETUP FINISHED")
     print("=" * 100)
-    for pod in pods:
+    for i_pod, pod in enumerate(pods):
         quoted_ssh_command: str = " ".join(
-            shlex.quote(field) for field in get_ssh_command(pod)
+            quote(field) for field in get_ssh_command(pod)
         )
-        print(f"SSH INTO {pod.name} BY RUNNING {quoted_ssh_command}")
+        print(f"SSH INTO {pod.name} BY RUNNING {quoted_ssh_command}", end="")
+        if i_pod == 0:
+            print(" (THIS IS THE HEAD POD - THE ONE YOU SHOULD BE RUNNING THINGS FROM)")
+        else:
+            print()
 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--kubernetes-config-filename", type=str, required=True)
     parser.add_argument(
+        "--github-repo",
+        type=str,
+        required=True,
+        help="Github repository with the code to run RL experiments.",
+    )
+    parser.add_argument(
+        "--github-username",
+        type=str,
+        help="Provide this and --github-password-or-token to be able to clone the repo if it is private.",
+    )
+    parser.add_argument("--github-password-or-token", type=str)
+    parser.add_argument(
         "--remote-docker-host",
         type=str,
         help="username@ip one can ssh into that will be used for running docker remotely. If not provided, it will be impossible to run docker on the cluster. One has to use docker remotely because SF Compute machines are themselves docker containers and it is impossible to run docker containers within docker containers without having permissions that SF Compute doesn't give.",
+    )
+    parser.add_argument(
+        "--remote-docker-host-identity-file",
+        type=str,
+        help="Same as the -i option of SSH.",
     )
     parser.add_argument("--weights-and-biases-api-key", type=str, required=True)
     args = parser.parse_args()
 
     main(
         kubernetes_config_filename=args.kubernetes_config_filename,
+        github_repo=args.github_repo,
+        github_username=args.github_username,
+        github_password_or_token=args.github_password_or_token,
         remote_docker_host_username_at_address=args.remote_docker_host,
+        remote_docker_host_identity_file=args.remote_docker_host_identity_file,
         weights_and_biases_api_key=args.weights_and_biases_api_key,
     )
