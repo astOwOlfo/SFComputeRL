@@ -9,6 +9,8 @@ import re
 from dataclasses import dataclass
 from beartype import beartype
 
+import optional as op
+
 
 @beartype
 @dataclass(frozen=True)
@@ -43,6 +45,8 @@ def run_command(
         print("RUNNING:", command)
     output = subprocess.run(command, capture_output=True, text=True)
     if verbose and output.stdout:
+        print("here")
+
         print("=== STDOUT ===")
         if truncate_output_to_length is not None:
             print(truncate(output.stdout, truncate_output_to_length))
@@ -55,9 +59,9 @@ def run_command(
         else:
             print(output.stderr)
 
-    assert output.returncode == 0, (
-        f"Command {command} failed with exit code {output.returncode}."
-    )
+    assert (
+        output.returncode == 0
+    ), f"Command {command} failed with exit code {output.returncode}."
     return output.stdout
 
 
@@ -96,8 +100,10 @@ def get_sf_compute_cluster_name() -> str:
 
 
 @beartype
-def add_user(username: str = "vlad") -> None:
-    cluster_name = get_sf_compute_cluster_name()
+def add_user(
+    username: str = "vlad", sf_compute_cluster_name: str | None = None
+) -> None:
+    cluster_name = op.unwrap_or(sf_compute_cluster_name, get_sf_compute_cluster_name())
     run_command(
         [
             "sf",
@@ -126,9 +132,9 @@ def pod_is_running(pod: Pod) -> bool:
         if line.strip() != ""
         and line.split() != ["NAME", "READY", "STATUS", "RESTARTS", "AGE"]
     }
-    assert pod.name in pod_to_status.keys(), (
-        f"Pod {pod.name} not found in the output of 'kubectl get pods'."
-    )
+    assert (
+        pod.name in pod_to_status.keys()
+    ), f"Pod {pod.name} not found in the output of 'kubectl get pods'."
     print(f"{pod_to_status=}")
     return pod_to_status[pod.name] == "Running"
 
@@ -387,8 +393,13 @@ def main(
     remote_docker_host_username_at_address: str | None,
     remote_docker_host_identity_file: str | None,
     weights_and_biases_api_key: str,
+    username_on_sf_compute_machine: str,
+    sf_compute_cluster_name: str | None = None,
 ) -> None:
-    add_user()
+    add_user(
+        username=username_on_sf_compute_machine,
+        sf_compute_cluster_name=sf_compute_cluster_name,
+    )
 
     apply_kubernetes_pod_config(kubernetes_config_filename)
 
@@ -494,6 +505,19 @@ if __name__ == "__main__":
         help="Same as the -i option of SSH.",
     )
     parser.add_argument("--weights-and-biases-api-key", type=str, required=True)
+    parser.add_argument(
+        "--username-on-sf-compute-machine",
+        type=str,
+        help="user for sf cluster",
+        default="vlad",
+    )
+    parser.add_argument(
+        "--cluster-name",
+        type=str,
+        required=False,
+        help="sf compute cluster name",
+        default=None,
+    )
     args = parser.parse_args()
 
     main(
@@ -504,4 +528,6 @@ if __name__ == "__main__":
         remote_docker_host_username_at_address=args.remote_docker_host,
         remote_docker_host_identity_file=args.remote_docker_host_identity_file,
         weights_and_biases_api_key=args.weights_and_biases_api_key,
+        username_on_sf_compute_machine=args.username_on_sf_compute_machine,
+        sf_compute_cluster_name=args.cluster_name,
     )
