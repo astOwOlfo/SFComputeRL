@@ -188,7 +188,7 @@ def install_rl_repo(
     pod: Pod,
     weights_and_biases_api_key: str,
     github_repo: str,
-    github_branch: str,
+    github_branch: str | None,
     git_clone_directory: str,
     github_username: str | None,
     github_password_or_token: str | None,
