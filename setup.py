@@ -59,9 +59,9 @@ def run_command(
         else:
             print(output.stderr)
 
-    assert (
-        output.returncode == 0
-    ), f"Command {command} failed with exit code {output.returncode}."
+    assert output.returncode == 0, (
+        f"Command {command} failed with exit code {output.returncode}."
+    )
     return output.stdout
 
 
@@ -132,9 +132,9 @@ def pod_is_running(pod: Pod) -> bool:
         if line.strip() != ""
         and line.split() != ["NAME", "READY", "STATUS", "RESTARTS", "AGE"]
     }
-    assert (
-        pod.name in pod_to_status.keys()
-    ), f"Pod {pod.name} not found in the output of 'kubectl get pods'."
+    assert pod.name in pod_to_status.keys(), (
+        f"Pod {pod.name} not found in the output of 'kubectl get pods'."
+    )
     print(f"{pod_to_status=}")
     return pod_to_status[pod.name] == "Running"
 
@@ -188,6 +188,7 @@ def install_rl_repo(
     pod: Pod,
     weights_and_biases_api_key: str,
     github_repo: str,
+    github_branch: str,
     git_clone_directory: str,
     github_username: str | None,
     github_password_or_token: str | None,
@@ -198,11 +199,15 @@ def install_rl_repo(
     else:
         github_repo_url = f"https://github.com/{github_repo}"
 
+    if github_branch is not None:
+        branch_argument = f" --branch {quote(github_branch)}"
+    else:
+        branch_argument = ""
     ssh_run_command(
         pod,
         # "git clone https://github.com/astOwOlfo/simple_rl_experiments.git --branch sf-compute",
         # "rm -rf simple_rl_experiments; git clone https://github.com/emmyqin/simple_rl_experiments.git",
-        f"rm -rf {git_clone_directory}; git clone {quote(github_repo_url)}",
+        f"rm -rf {git_clone_directory}; git clone {quote(github_repo_url)} {branch_argument}",
         truncate_output_to_length=256,
     )
     ssh_run_command(
@@ -370,8 +375,6 @@ def setup_remote_docker_server(
     #     ssh_host_command += ["-i", host_identity_file]
     # run_command(ssh_host_command + ["sudo usermod -aG docker $USER"])
 
-
-
     for guest_pod in guest_pods:
         ssh_run_command(
             guest_pod, "apt install -y docker.io", truncate_output_to_length=256
@@ -390,18 +393,20 @@ def setup_remote_docker_server(
         ssh_run_command(
             guest_pod,
             f"""cat >> ~/.ssh/config << EOF
-Host {host_username_at_address.split('@')[-1]}
+Host {host_username_at_address.split("@")[-1]}
     ControlMaster auto
     ControlPath ~/.ssh/sockets/%r@%h:%p
     ControlPersist 600
 EOF
-"""
+""",
         )
+
 
 @beartype
 def main(
     kubernetes_config_filename: str,
     github_repo: str,
+    github_branch: str | None,
     github_username: str | None,
     github_password_or_token: str | None,
     remote_docker_host_username_at_address: str | None,
@@ -439,6 +444,7 @@ def main(
             pod,
             weights_and_biases_api_key=weights_and_biases_api_key,
             github_repo=github_repo,
+            github_branch=github_branch,
             git_clone_directory=git_clone_directory,
             github_username=github_username,
             github_password_or_token=github_password_or_token,
@@ -502,6 +508,7 @@ if __name__ == "__main__":
         required=True,
         help="Github repository with the code to run RL experiments.",
     )
+    parser.add_argument("--github-branch", help="Branch for --github-repo.")
     parser.add_argument(
         "--github-username",
         type=str,
@@ -537,6 +544,7 @@ if __name__ == "__main__":
     main(
         kubernetes_config_filename=args.kubernetes_config_filename,
         github_repo=args.github_repo,
+        github_branch=args.github_branch,
         github_username=args.github_username,
         github_password_or_token=args.github_password_or_token,
         remote_docker_host_username_at_address=args.remote_docker_host,
