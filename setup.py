@@ -365,13 +365,12 @@ def setup_ssh_connection(
 def setup_remote_docker_server(
     host_username_at_address: str, host_identity_file: str | None, guest_pods: list[Pod]
 ) -> None:
-    run_command(
-        ["ssh", "-o", "StrictHostKeyChecking=no", host_username_at_address]
-        + (["-i", host_identity_file] if host_identity_file is not None else [])
-        + [
-            "sudo usermod -aG docker $USER",
-        ]
-    )
+    # ssh_host_command = ["ssh", "-o", "StrictHostKeyChecking=no", host_username_at_address]
+    # if host_identity_file is not None:
+    #     ssh_host_command += ["-i", host_identity_file]
+    # run_command(ssh_host_command + ["sudo usermod -aG docker $USER"])
+
+
 
     for guest_pod in guest_pods:
         ssh_run_command(
@@ -383,6 +382,21 @@ def setup_remote_docker_server(
         )
         ssh_run_command(guest_pod, "docker context use remote-server")
 
+        # i don't understand what the following two commands do
+        # all i know is that by default, there are some limits on how many ssh connections it is possible to have in parallel
+        # and this is problematic because this means we can only do a number proportional to this limit docker actions on the host in parallel
+        # and the two commands increase the number of ssh connections we can have in parallel somehow
+        ssh_run_command(guest_pod, "mkdir -p ~/.ssh/sockets")
+        ssh_run_command(
+            guest_pod,
+            f"""cat >> ~/.ssh/config << EOF
+Host {host_username_at_address.split('@')[-1]}
+    ControlMaster auto
+    ControlPath ~/.ssh/sockets/%r@%h:%p
+    ControlPersist 600
+EOF
+"""
+        )
 
 @beartype
 def main(
@@ -416,7 +430,7 @@ def main(
 
     for pod in pods:
         forward_pod_ports_for_ssh(pod)
-    sleep(5)
+    sleep(15)
 
     git_clone_directory: str = quote(github_repo.split("/")[-1])
 

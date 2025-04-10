@@ -17,11 +17,11 @@ spec:
     - containerPort: 22
     resources:
       requests:
-        cpu: 32
+        cpu: 48
         memory: 512Gi
         nvidia.com/gpu: 8
       limits:
-        cpu: 32
+        cpu: 96
         memory: 512Gi
         nvidia.com/gpu: 8
     volumeMounts:
