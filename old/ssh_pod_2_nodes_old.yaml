@@ -8,7 +8,7 @@ spec:
     sfcompute.com/tenant: redwood-research-1740702252
   containers:
   - name: cuda
-    image: volodimir1024/reward-hacking-cuda-128:v1.0
+    image: volodimir1024/sf-compute-docker:v2.0 # nvidia/cuda:12.3.1-base-ubuntu22.04
     command:
     - /bin/sh
     - -c
@@ -47,7 +47,7 @@ spec:
     sfcompute.com/tenant: redwood-research-1740702252
   containers:
   - name: cuda
-    image: volodimir1024/reward-hacking-cuda-128:v1.0
+    image: volodimir1024/sf-compute-docker:v2.0 # nvidia/cuda:12.3.1-base-ubuntu22.04
     command:
     - /bin/sh
     - -c
@@ -74,4 +74,4 @@ spec:
   - name: shm-volume
     emptyDir:
       medium: Memory
-      sizeLimit: 64Gi 
+      sizeLimit: 64Gi

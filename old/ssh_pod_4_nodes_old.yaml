@@ -1,14 +1,14 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: ssh-pod-8gpu-1j
+  name: ssh-pod-8gpu-1b
   namespace: sf-redwood-research-1740702252
 spec:
   nodeSelector:
     sfcompute.com/tenant: redwood-research-1740702252
   containers:
   - name: cuda
-    image: volodimir1024/reward-hacking-cuda-128:v1.0
+    image: volodimir1024/sf-compute-docker:v2.0 # nvidia/cuda:12.3.1-base-ubuntu22.04
     command:
     - /bin/sh
     - -c
@@ -40,14 +40,14 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: ssh-pod-8gpu-2j
+  name: ssh-pod-8gpu-2
   namespace: sf-redwood-research-1740702252
 spec:
   nodeSelector:
     sfcompute.com/tenant: redwood-research-1740702252
   containers:
   - name: cuda
-    image: volodimir1024/reward-hacking-cuda-128:v1.0
+    image: volodimir1024/sf-compute-docker:v2.0 # nvidia/cuda:12.3.1-base-ubuntu22.04
     command:
     - /bin/sh
     - -c
@@ -79,14 +79,14 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: ssh-pod-8gpu-3j
+  name: ssh-pod-8gpu-3
   namespace: sf-redwood-research-1740702252
 spec:
   nodeSelector:
     sfcompute.com/tenant: redwood-research-1740702252
   containers:
   - name: cuda
-    image: volodimir1024/reward-hacking-cuda-128:v1.0
+    image: volodimir1024/sf-compute-docker:v2.0 # nvidia/cuda:12.3.1-base-ubuntu22.04
     command:
     - /bin/sh
     - -c
@@ -118,14 +118,14 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: ssh-pod-8gpu-4j
+  name: ssh-pod-8gpu-4
   namespace: sf-redwood-research-1740702252
 spec:
   nodeSelector:
     sfcompute.com/tenant: redwood-research-1740702252
   containers:
   - name: cuda
-    image: volodimir1024/reward-hacking-cuda-128:v1.0
+    image: volodimir1024/sf-compute-docker:v2.0 # nvidia/cuda:12.3.1-base-ubuntu22.04
     command:
     - /bin/sh
     - -c
@@ -152,4 +152,4 @@ spec:
   - name: shm-volume
     emptyDir:
       medium: Memory
-      sizeLimit: 64Gi 
+      sizeLimit: 64Gi
