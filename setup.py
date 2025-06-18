@@ -186,7 +186,7 @@ def clone_and_install_rl_repo(
     )
     ssh_run_command(
         pod,
-        f"cd {git_clone_directory} && uv venv && uv sync",
+        f"cd {git_clone_directory} && /root/.local/bin/uv venv && /root/.local/bin/uv sync",
         truncate_output_to_length=256,
     )
 
@@ -227,12 +227,12 @@ def get_pods(config_filename: str) -> list[Pod]:
 def start_ray_head_return_address(pod: Pod, git_clone_directory: str) -> str:
     ssh_run_command(
         pod,
-        f"cd {git_clone_directory}; source $HOME/.local/bin/env; uv run ray stop",
+        f"cd {git_clone_directory}; source $HOME/.local/bin/env; /root/.local/bin/uv run ray stop",
         truncate_output_to_length=256,
     )
     output = ssh_run_command(
         pod,
-        f"cd {git_clone_directory}; source $HOME/.local/bin/env; uv run ray stop; uv run ray start --head",
+        f"cd {git_clone_directory}; source $HOME/.local/bin/env; /root/.local/bin/uv run ray stop; /root/.local/bin/uv run ray start --head",
     )
 
     matches = re.findall(r"ray start --address='([0-9.]+:[0-9]+)'", output)
@@ -247,12 +247,12 @@ def start_and_connect_ray(
 ) -> None:
     ssh_run_command(
         pod,
-        f"cd {git_clone_directory}; source $HOME/.local/bin/env; uv run ray stop",
+        f"cd {git_clone_directory}; source $HOME/.local/bin/env; /root/.local/bin/uv run ray stop",
         truncate_output_to_length=256,
     )
     ssh_run_command(
         pod,
-        f"cd {git_clone_directory}; source $HOME/.local/bin/env; uv run ray stop; uv run ray start --address={ray_head_address}",
+        f"cd {git_clone_directory}; source $HOME/.local/bin/env; /root/.local/bin/uv run ray stop; /root/.local/bin/uv run ray start --address={ray_head_address}",
     )
 
 
@@ -265,7 +265,7 @@ def write_ray_address_to_bashrc(pod: Pod, address: str) -> None:
 def print_ray_status(pod: Pod, ray_head_address: str, git_clone_directory: str) -> None:
     ssh_run_command(
         pod,
-        f"cd {git_clone_directory}; source $HOME/.local/bin/env; uv run ray status --address={ray_head_address}",
+        f"cd {git_clone_directory}; source $HOME/.local/bin/env; /root/.local/bin/uv run ray status --address={ray_head_address}",
     )
 
 
