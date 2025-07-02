@@ -103,7 +103,10 @@ def get_sf_compute_cluster_name() -> str:
 def add_user(
     username: str = "vlad", sf_compute_cluster_name: str | None = None
 ) -> None:
-    cluster_name = op.unwrap_or(sf_compute_cluster_name, get_sf_compute_cluster_name())
+    if sf_compute_cluster_name is None:
+        cluster_name = get_sf_compute_cluster_name()
+    else:
+        cluster_name = sf_compute_cluster_name
     run_command(
         [
             "sf",
